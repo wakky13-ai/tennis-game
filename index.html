@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>古典的テニスゲーム</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: linear-gradient(135deg, #1e3c72, #2a5298);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            font-family: 'Courier New', monospace;
+            color: white;
+        }
+        
+        .game-container {
+            text-align: center;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 20px;
+            border-radius: 15px;
+            box-shadow: 0 0 30px rgba(255, 255, 255, 0.2);
+        }
+        
+        #gameCanvas {
+            border: 3px solid #fff;
+            border-radius: 10px;
+            background: #000;
+            box-shadow: 0 0 20px rgba(255, 255, 255, 0.3);
+        }
+        
+        .controls {
+            margin-top: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .player-controls {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 10px;
+            border-radius: 8px;
+            min-width: 120px;
+        }
+        
+        .score {
+            font-size: 2rem;
+            font-weight: bold;
+            text-shadow: 0 0 10px currentColor;
+        }
+        
+        .instructions {
+            margin-top: 15px;
+            font-size: 0.9rem;
+            opacity: 0.8;
+        }
+        
+        .start-btn {
+            background: linear-gradient(45deg, #ff6b6b, #ee5a24);
+            border: none;
+            color: white;
+            padding: 12px 24px;
+            font-size: 1.1rem;
+            border-radius: 25px;
+            cursor: pointer;
+            margin: 10px;
+            transition: all 0.3s ease;
+        }
+        
+        .start-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(255, 107, 107, 0.4);
+        }
+        
+        .game-over {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.9);
+            padding: 30px;
+            border-radius: 15px;
+            text-align: center;
+            display: none;
+        }
+        
+        .winner-text {
+            font-size: 2rem;
+            margin-bottom: 20px;
+            text-shadow: 0 0 15px currentColor;
+        }
+    </style>
+</head>
+<body>
+    <div class="game-container">
+        <h1 style="margin-top: 0; text-shadow: 0 0 10px #fff;">🎾 古典的テニスゲーム</h1>
+        
+        <canvas id="gameCanvas" width="800" height="400"></canvas>
+        
+        <div class="controls">
+            <div class="player-controls">
+                <div style="color: #ff6b6b;">プレイヤー1</div>
+                <div class="score" id="player1Score" style="color: #ff6b6b;">0</div>
+                <div style="font-size: 0.8rem; margin-top: 5px;">W / S キー</div>
+            </div>
+            
+            <div>
+                <button class="start-btn" onclick="startGame()">ゲーム開始</button>
+                <button class="start-btn" onclick="pauseGame()">一時停止</button>
+            </div>
+            
+            <div class="player-controls">
+                <div style="color: #4ecdc4;">プレイヤー2</div>
+                <div class="score" id="player2Score" style="color: #4ecdc4;">0</div>
+                <div style="font-size: 0.8rem; margin-top: 5px;">↑ / ↓ キー</div>
+            </div>
+        </div>
+        
+        <div class="instructions">
+            <p>🎯 最初に5点取った方の勝ち！</p>
+            <p>⚡ ボールの速度は時間と共に上がります</p>
+        </div>
+        
+        <div class="game-over" id="gameOver">
+            <div class="winner-text" id="winnerText"></div>
+            <button class="start-btn" onclick="resetGame()">もう一度プレイ</button>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        // ゲーム状態
+        let gameRunning = false;
+        let animationId;
+        
+        // ゲームオブジェクト
+        const game = {
+            player1: {
+                x: 20,
+                y: canvas.height / 2 - 50,
+                width: 15,
+                height: 100,
+                speed: 6,
+                score: 0,
+                color: '#ff6b6b'
+            },
+            player2: {
+                x: canvas.width - 35,
+                y: canvas.height / 2 - 50,
+                width: 15,
+                height: 100,
+                speed: 6,
+                score: 0,
+                color: '#4ecdc4'
+            },
+            ball: {
+                x: canvas.width / 2,
+                y: canvas.height / 2,
+                radius: 8,
+                speedX: 5,
+                speedY: 3,
+                maxSpeed: 12,
+                color: '#fff'
+            }
+        };
+        
+        // キー入力管理
+        const keys = {};
+        
+        document.addEventListener('keydown', (e) => {
+            keys[e.key.toLowerCase()] = true;
+        });
+        
+        document.addEventListener('keyup', (e) => {
+            keys[e.key.toLowerCase()] = false;
+        });
+        
+        // パドルの描画
+        function drawPaddle(paddle) {
+            // メインのパドル
+            ctx.fillStyle = paddle.color;
+            ctx.shadowColor = paddle.color;
+            ctx.shadowBlur = 15;
+            ctx.fillRect(paddle.x, paddle.y, paddle.width, paddle.height);
+            
+            // パドルの縁取り（より見やすく）
+            ctx.strokeStyle = '#fff';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(paddle.x, paddle.y, paddle.width, paddle.height);
+            
+            // パドルのハイライト効果
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+            ctx.fillRect(paddle.x + 1, paddle.y + 1, paddle.width - 2, paddle.height / 3);
+            
+            ctx.shadowBlur = 0;
+        }
+        
+        // ボールの描画
+        function drawBall() {
+            ctx.fillStyle = game.ball.color;
+            ctx.shadowColor = game.ball.color;
+            ctx.shadowBlur = 15;
+            ctx.beginPath();
+            ctx.arc(game.ball.x, game.ball.y, game.ball.radius, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.shadowBlur = 0;
+        }
+        
+        // 中央線の描画
+        function drawCenterLine() {
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+            ctx.setLineDash([10, 10]);
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(canvas.width / 2, 0);
+            ctx.lineTo(canvas.width / 2, canvas.height);
+            ctx.stroke();
+            ctx.setLineDash([]);
+        }
+        
+        // プレイヤーの移動
+        function updatePlayers() {
+            // プレイヤー1 (W/S)
+            if (keys['w'] && game.player1.y > 0) {
+                game.player1.y -= game.player1.speed;
+            }
+            if (keys['s'] && game.player1.y < canvas.height - game.player1.height) {
+                game.player1.y += game.player1.speed;
+            }
+            
+            // プレイヤー2 (矢印キー)
+            if (keys['arrowup'] && game.player2.y > 0) {
+                game.player2.y -= game.player2.speed;
+            }
+            if (keys['arrowdown'] && game.player2.y < canvas.height - game.player2.height) {
+                game.player2.y += game.player2.speed;
+            }
+        }
+        
+        // ボールの更新
+        function updateBall() {
+            game.ball.x += game.ball.speedX;
+            game.ball.y += game.ball.speedY;
+            
+            // 上下の壁との衝突
+            if (game.ball.y <= game.ball.radius || game.ball.y >= canvas.height - game.ball.radius) {
+                game.ball.speedY = -game.ball.speedY;
+                playSound('wall');
+            }
+            
+            // パドルとの衝突判定
+            checkPaddleCollision();
+            
+            // 得点判定
+            if (game.ball.x < 0) {
+                game.player2.score++;
+                resetBall();
+                playSound('score');
+            } else if (game.ball.x > canvas.width) {
+                game.player1.score++;
+                resetBall();
+                playSound('score');
+            }
+            
+            // 勝利判定
+            if (game.player1.score >= 5 || game.player2.score >= 5) {
+                endGame();
+            }
+        }
+        
+        // パドルとの衝突判定
+        function checkPaddleCollision() {
+            // プレイヤー1との衝突
+            if (game.ball.x - game.ball.radius <= game.player1.x + game.player1.width &&
+                game.ball.y >= game.player1.y &&
+                game.ball.y <= game.player1.y + game.player1.height &&
+                game.ball.speedX < 0) {
+                
+                game.ball.speedX = -game.ball.speedX;
+                
+                // パドルの中央からの距離に応じてY方向の速度を調整
+                const hitPos = (game.ball.y - (game.player1.y + game.player1.height / 2)) / (game.player1.height / 2);
+                game.ball.speedY = hitPos * 5;
+                
+                increaseSpeed();
+                playSound('paddle');
+            }
+            
+            // プレイヤー2との衝突
+            if (game.ball.x + game.ball.radius >= game.player2.x &&
+                game.ball.y >= game.player2.y &&
+                game.ball.y <= game.player2.y + game.player2.height &&
+                game.ball.speedX > 0) {
+                
+                game.ball.speedX = -game.ball.speedX;
+                
+                const hitPos = (game.ball.y - (game.player2.y + game.player2.height / 2)) / (game.player2.height / 2);
+                game.ball.speedY = hitPos * 5;
+                
+                increaseSpeed();
+                playSound('paddle');
+            }
+        }
+        
+        // ボールの速度を徐々に上げる
+        function increaseSpeed() {
+            if (Math.abs(game.ball.speedX) < game.ball.maxSpeed) {
+                game.ball.speedX *= 1.05;
+                game.ball.speedY *= 1.05;
+            }
+        }
+        
+        // ボールのリセット
+        function resetBall() {
+            game.ball.x = canvas.width / 2;
+            game.ball.y = canvas.height / 2;
+            game.ball.speedX = (Math.random() > 0.5 ? 1 : -1) * 5;
+            game.ball.speedY = (Math.random() - 0.5) * 4;
+            
+            updateScores();
+        }
+        
+        // スコア更新
+        function updateScores() {
+            document.getElementById('player1Score').textContent = game.player1.score;
+            document.getElementById('player2Score').textContent = game.player2.score;
+        }
+        
+        // 効果音の再生（Web Audio API使用）
+        function playSound(type) {
+            const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            const oscillator = audioContext.createOscillator();
+            const gainNode = audioContext.createGain();
+            
+            oscillator.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+            
+            switch(type) {
+                case 'paddle':
+                    oscillator.frequency.value = 220;
+                    gainNode.gain.setValueAtTime(0.1, audioContext.currentTime);
+                    break;
+                case 'wall':
+                    oscillator.frequency.value = 150;
+                    gainNode.gain.setValueAtTime(0.08, audioContext.currentTime);
+                    break;
+                case 'score':
+                    oscillator.frequency.value = 440;
+                    gainNode.gain.setValueAtTime(0.12, audioContext.currentTime);
+                    break;
+            }
+            
+            oscillator.start();
+            oscillator.stop(audioContext.currentTime + 0.1);
+        }
+        
+        // ゲーム描画
+        function draw() {
+            // 背景をクリア
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // 中央線を描画
+            drawCenterLine();
+            
+            // ゲームオブジェクトを描画
+            drawPaddle(game.player1);
+            drawPaddle(game.player2);
+            drawBall();
+        }
+        
+        // ゲームループ
+        function gameLoop() {
+            if (!gameRunning) return;
+            
+            updatePlayers();
+            updateBall();
+            draw();
+            
+            animationId = requestAnimationFrame(gameLoop);
+        }
+        
+        // ゲーム開始
+        function startGame() {
+            if (!gameRunning) {
+                gameRunning = true;
+                gameLoop();
+            }
+        }
+        
+        // ゲーム一時停止
+        function pauseGame() {
+            gameRunning = false;
+            if (animationId) {
+                cancelAnimationFrame(animationId);
+            }
+        }
+        
+        // ゲーム終了
+        function endGame() {
+            gameRunning = false;
+            const winner = game.player1.score >= 5 ? 'プレイヤー1' : 'プレイヤー2';
+            const winnerColor = game.player1.score >= 5 ? '#ff6b6b' : '#4ecdc4';
+            
+            document.getElementById('winnerText').textContent = `🏆 ${winner} の勝利！`;
+            document.getElementById('winnerText').style.color = winnerColor;
+            document.getElementById('gameOver').style.display = 'block';
+        }
+        
+        // ゲームリセット
+        function resetGame() {
+            game.player1.score = 0;
+            game.player2.score = 0;
+            game.player1.y = canvas.height / 2 - 50;
+            game.player2.y = canvas.height / 2 - 50;
+            
+            resetBall();
+            updateScores();
+            
+            document.getElementById('gameOver').style.display = 'none';
+        }
+        
+        // 初期描画
+        draw();
+        updateScores();
+    </script>
+</body>
+</html>
